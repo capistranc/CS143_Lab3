@@ -63,7 +63,19 @@ private[sql] class DiskPartition (
    * @param row the [[Row]] we are adding
    */
   def insert(row: Row) = {
-    // IMPLEMENT ME
+    
+    if (inputClosed) {
+      throw new SparkException("Input is closed.")
+    }
+
+    data.add(row);
+    writtenToDisk = false;
+
+    if (measurePartitionSize() > blockSize) {
+      spillPartitionToDisk()
+      data.clear()
+    }
+
   }
 
   /**
@@ -106,13 +118,19 @@ private[sql] class DiskPartition (
       var byteArray: Array[Byte] = null
 
       override def next() = {
-        // IMPLEMENT ME
-        null
+        if (hasNext()) {
+          currentIterator.next()
+        } else {
+          null
+        }
       }
 
       override def hasNext() = {
-        // IMPLEMENT ME
-        false
+        if (currentIterator.hasNext) {
+          true
+        } else {
+          fetchNextChunk()
+        }
       }
 
       /**
@@ -122,9 +140,17 @@ private[sql] class DiskPartition (
        * @return true unless the iterator is empty.
        */
       private[this] def fetchNextChunk(): Boolean = {
-        // IMPLEMENT ME
-        false
+        if (chunkSizeIterator.hasNext)
+        {
+          val size = chunkSizeIterator.next()
+          byteArray = CS143Utils.getNextChunkBytes(inStream, size, byteArray)
+          currentIterator = CS143Utils.getListFromBytes(byteArray).iterator.asScala
+          true
+        } else {
+          false
+        }
       }
+
     }
   }
 
@@ -136,7 +162,12 @@ private[sql] class DiskPartition (
    * also be closed.
    */
   def closeInput() = {
-    // IMPLEMENT ME
+    if (!inputClosed && !writtenToDisk && !data.isEmpty()) {
+        spillPartitionToDisk()
+        data.clear()
+      }
+
+    outStream.close()
     inputClosed = true
   }
 
